@@ -1,15 +1,18 @@
-<!-- Microphone Permission -->
-<div class="modal active" id="permission-modal">
-    <div class="modal-content">
-        <h2>🎤 Microphone Access Required</h2>
-        <p>This assistant needs microphone access to listen for "K.M.F.L."</p>
-        <p>Click below to enable microphone:</p>
-        <button id="request-permission" class="btn-primary">
-            <i class="fas fa-microphone"></i> Enable Microphone
-        </button>
-        <p class="hint" style="margin-top: 20px; color: #60a5fa;">
-            <i class="fas fa-info-circle"></i> 
-            After allowing permission, just say <strong>"K M F L"</strong> to activate
-        </p>
-    </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>K.M.F.L Assistant</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="assistant">
+  <div class="avatar">🤖</div>
+  <h2>K.M.F.L Assistant</h2>
+  <p id="status">Idle • Say "K.M.F.L."</p>
 </div>
+
+<script src="script.js"></script>
+</body>
+</html>
