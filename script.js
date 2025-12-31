@@ -1,33 +1,33 @@
-// AI Voice Assistant - Main Application
+// AI Voice Assistant - REAL TIME WORKING VERSION
 class VoiceAssistant {
     constructor() {
         // State Management
-        this.state = 'idle'; // idle, listening, thinking, speaking
+        this.state = 'idle';
         this.wakeWordDetected = false;
         this.wakeWordCount = 0;
-        this.silenceTimeout = 3000; // 3 seconds default
+        this.silenceTimeout = 3000;
         this.audioVolume = 0.8;
         this.soundEnabled = true;
-        
-        // Audio Processing
-        this.audioContext = null;
-        this.analyser = null;
-        this.microphone = null;
-        this.audioDataArray = null;
-        this.silenceCounter = 0;
-        this.audioLevel = 0;
         
         // Speech Recognition
         this.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         this.recognition = null;
-        this.isListening = false;
+        this.finalTranscript = '';
+        this.interimTranscript = '';
+        this.silenceTimer = null;
+        this.lastSpeechTime = 0;
         
         // Speech Synthesis
         this.synth = window.speechSynthesis;
         this.voice = null;
         
-        // Conversation History
-        this.conversationHistory = [];
+        // Audio Context for volume detection
+        this.audioContext = null;
+        this.analyser = null;
+        this.microphone = null;
+        this.dataArray = null;
+        this.audioLevel = 0;
+        this.speechThreshold = 25;
         
         // DOM Elements
         this.elements = {
@@ -36,7 +36,6 @@ class VoiceAssistant {
             statusIndicator: document.getElementById('status-indicator'),
             statusText: document.getElementById('status-text'),
             logContent: document.getElementById('log-content'),
-            conversationLog: document.getElementById('conversation-log'),
             silenceTimeoutInput: document.getElementById('silence-timeout'),
             timeoutValue: document.getElementById('timeout-value'),
             volumeInput: document.getElementById('volume'),
@@ -49,96 +48,16 @@ class VoiceAssistant {
             debugContent: document.getElementById('debug-content')
         };
         
-        // Initialize the application
         this.init();
     }
     
-    // Initialize the application
     async init() {
-        console.log('🚀 Initializing AI Voice Assistant...');
+        console.log('🚀 Starting AI Voice Assistant...');
         
-        // Set up event listeners
         this.setupEventListeners();
-        
-        // Initialize speech synthesis
         this.initSpeechSynthesis();
         
-        // Request microphone permission
-        await this.requestMicrophonePermission();
-        
-        // Initialize wake word detection
-        this.initWakeWordDetection();
-        
-        // Update UI
-        this.updateStatus('idle', 'Waiting for wake word: "K.M.F.L."');
-        
-        // Start debug updates
-        this.startDebugUpdates();
-        
-        // Add initial log message
-        this.addToLog('system', 'Assistant initialized and ready. Say "K.M.F.L." to start.');
-    }
-    
-    // Set up all event listeners
-    setupEventListeners() {
-        // Silence timeout control
-        this.elements.silenceTimeoutInput.addEventListener('input', (e) => {
-            this.silenceTimeout = e.target.value * 1000;
-            this.elements.timeoutValue.textContent = `${e.target.value}s`;
-        });
-        
-        // Volume control
-        this.elements.volumeInput.addEventListener('input', (e) => {
-            this.audioVolume = e.target.value / 100;
-            this.elements.volumeValue.textContent = `${e.target.value}%`;
-        });
-        
-        // Clear log button
-        this.elements.clearLogBtn.addEventListener('click', () => {
-            this.elements.logContent.innerHTML = '';
-            this.conversationHistory = [];
-        });
-        
-        // Toggle sound button
-        this.elements.toggleSoundBtn.addEventListener('click', () => {
-            this.soundEnabled = !this.soundEnabled;
-            this.elements.toggleSoundBtn.innerHTML = `
-                <i class="fas fa-volume-${this.soundEnabled ? 'up' : 'mute'}"></i>
-                Sound: ${this.soundEnabled ? 'ON' : 'OFF'}
-            `;
-        });
-        
-        // Request permission button
-        this.elements.requestPermissionBtn.addEventListener('click', () => {
-            this.requestMicrophonePermission();
-        });
-        
-        // Debug panel toggle
-        document.getElementById('toggle-debug').addEventListener('click', () => {
-            this.elements.debugPanel.style.transform = 
-                this.elements.debugPanel.style.transform === 'translateY(0)' ?
-                'translateY(calc(100% - 40px))' : 'translateY(0)';
-        });
-        
-        // Handle speech synthesis end
-        this.synth.addEventListener('end', () => {
-            if (this.state === 'speaking') {
-                this.returnToWakeWordMode();
-            }
-        });
-        
-        // Handle page visibility change
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                this.stopAllAudioProcessing();
-            } else {
-                this.resumeAudioProcessing();
-            }
-        });
-    }
-    
-    // Request microphone permission
-    async requestMicrophonePermission() {
+        // Request microphone immediately
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
@@ -148,439 +67,476 @@ class VoiceAssistant {
                 }
             });
             
-            // Initialize audio context
             this.initAudioContext(stream);
-            
-            // Hide permission modal
             this.elements.permissionModal.classList.remove('active');
+            this.addToLog('system', '✅ Microphone ready. Say "K M F L" to activate!');
             
-            this.addToLog('system', 'Microphone access granted. Listening for wake word...');
+            // Start wake word detection immediately
+            this.startWakeWordDetection();
             
         } catch (error) {
-            console.error('Microphone permission error:', error);
+            console.error('Microphone error:', error);
             this.elements.permissionModal.classList.add('active');
-            this.addToLog('system', 'Microphone permission required. Please allow access.');
+            this.addToLog('system', '❌ Need microphone permission.');
         }
+        
+        this.updateStatus('idle', '🎤 Say "K M F L" to wake me up!');
     }
     
-    // Initialize Audio Context for wake word detection
+    setupEventListeners() {
+        this.elements.silenceTimeoutInput.addEventListener('input', (e) => {
+            this.silenceTimeout = e.target.value * 1000;
+            this.elements.timeoutValue.textContent = `${e.target.value}s`;
+        });
+        
+        this.elements.volumeInput.addEventListener('input', (e) => {
+            this.audioVolume = e.target.value / 100;
+            this.elements.volumeValue.textContent = `${e.target.value}%`;
+        });
+        
+        this.elements.clearLogBtn.addEventListener('click', () => {
+            this.elements.logContent.innerHTML = '';
+        });
+        
+        this.elements.toggleSoundBtn.addEventListener('click', () => {
+            this.soundEnabled = !this.soundEnabled;
+            this.elements.toggleSoundBtn.innerHTML = `
+                <i class="fas fa-volume-${this.soundEnabled ? 'up' : 'mute'}"></i>
+                Sound: ${this.soundEnabled ? 'ON' : 'OFF'}
+            `;
+        });
+        
+        this.elements.requestPermissionBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                this.initAudioContext(stream);
+                this.elements.permissionModal.classList.remove('active');
+                this.startWakeWordDetection();
+            } catch (error) {
+                alert('Please allow microphone access!');
+            }
+        });
+        
+        document.getElementById('toggle-debug').addEventListener('click', () => {
+            const panel = this.elements.debugPanel;
+            panel.style.transform = panel.style.transform === 'translateY(0)' ?
+                'translateY(calc(100% - 40px))' : 'translateY(0)';
+        });
+        
+        this.synth.addEventListener('end', () => {
+            if (this.state === 'speaking') {
+                this.returnToWakeWordMode();
+            }
+        });
+        
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.stopAudio();
+            } else {
+                this.resumeAudio();
+            }
+        });
+    }
+    
     initAudioContext(stream) {
         try {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             this.analyser = this.audioContext.createAnalyser();
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Configure analyser
-            this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.8;
+            this.analyser.fftSize = 256;
+            this.analyser.smoothingTimeConstant = 0.3;
             this.microphone.connect(this.analyser);
             
-            // Create data array for analysis
-            this.audioDataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
-            // Start audio processing for wake word detection
-            this.processAudioForWakeWord();
+            // Start audio level monitoring
+            this.monitorAudioLevel();
             
         } catch (error) {
-            console.error('Audio context initialization error:', error);
-            this.addToLog('system', 'Audio processing initialization failed.');
+            console.error('Audio context error:', error);
         }
     }
     
-    // Initialize wake word detection
-    initWakeWordDetection() {
+    monitorAudioLevel() {
+        if (!this.analyser || !this.dataArray) return;
+        
+        const updateLevel = () => {
+            this.analyser.getByteFrequencyData(this.dataArray);
+            
+            let sum = 0;
+            for (let i = 0; i < this.dataArray.length; i++) {
+                sum += this.dataArray[i];
+            }
+            this.audioLevel = Math.round(sum / this.dataArray.length);
+            
+            // Update debug info
+            this.updateDebugInfo();
+            
+            // Continue monitoring
+            if (this.state !== 'speaking') {
+                requestAnimationFrame(updateLevel.bind(this));
+            }
+        };
+        
+        updateLevel();
+    }
+    
+    startWakeWordDetection() {
         if (!this.SpeechRecognition) {
-            this.addToLog('system', 'Speech recognition not supported in this browser.');
+            this.addToLog('system', '❌ Speech recognition not supported');
             return;
         }
         
         this.recognition = new this.SpeechRecognition();
-        this.recognition.continuous = false;
-        this.recognition.interimResults = false;
+        this.recognition.continuous = true;
+        this.recognition.interimResults = true;
         this.recognition.lang = 'en-US';
+        this.recognition.maxAlternatives = 3;
         
         this.recognition.onstart = () => {
-            console.log('🎤 Speech recognition started');
+            console.log('🎤 Wake word detection started');
+            this.isListening = true;
         };
         
         this.recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript.toLowerCase().trim();
-            console.log('Recognized:', transcript);
+            this.interimTranscript = '';
+            this.finalTranscript = '';
             
-            // Check for wake word
-            if (transcript.includes('k.m.f.l') || transcript.includes('kmfl')) {
-                this.handleWakeWordDetection();
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript.toLowerCase();
+                
+                if (event.results[i].isFinal) {
+                    this.finalTranscript += transcript + ' ';
+                    
+                    // CHECK FOR WAKE WORD
+                    this.checkForWakeWord(transcript);
+                    
+                } else {
+                    this.interimTranscript += transcript;
+                    
+                    // Also check interim results for faster wake word detection
+                    if (this.state === 'idle') {
+                        this.checkForWakeWord(transcript);
+                    }
+                }
+            }
+            
+            // Handle user speech after wake word
+            if (this.state === 'listening' && (this.interimTranscript || this.finalTranscript)) {
+                this.handleUserSpeech();
             }
         };
         
         this.recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
-            
-            // Restart recognition on error (except user aborted)
-            if (event.error !== 'aborted') {
-                setTimeout(() => this.startWakeWordRecognition(), 1000);
+            if (event.error === 'no-speech' || event.error === 'audio-capture') {
+                console.log('No speech detected, continuing...');
+            } else {
+                console.error('Recognition error:', event.error);
             }
         };
         
         this.recognition.onend = () => {
-            if (this.state === 'idle' && !this.wakeWordDetected) {
-                this.startWakeWordRecognition();
-            }
-        };
-        
-        // Start wake word recognition
-        this.startWakeWordRecognition();
-    }
-    
-    // Start listening for wake word
-    startWakeWordRecognition() {
-        if (this.recognition && this.state === 'idle') {
-            try {
-                this.recognition.start();
-                this.isListening = true;
-            } catch (error) {
-                console.log('Restarting speech recognition...');
-                setTimeout(() => this.startWakeWordRecognition(), 1000);
-            }
-        }
-    }
-    
-    // Process audio for wake word detection (alternative method)
-    processAudioForWakeWord() {
-        if (!this.analyser || !this.audioDataArray) return;
-        
-        const processAudio = () => {
-            // Get audio data
-            this.analyser.getByteFrequencyData(this.audioDataArray);
-            
-            // Calculate average volume
-            let sum = 0;
-            for (let i = 0; i < this.audioDataArray.length; i++) {
-                sum += this.audioDataArray[i];
-            }
-            this.audioLevel = Math.round(sum / this.audioDataArray.length);
-            
-            // Visual feedback for audio level (optional)
-            this.updateDebugInfo();
-            
-            // Continue processing
+            console.log('Recognition ended, restarting...');
             if (this.state === 'idle') {
-                requestAnimationFrame(processAudio);
-            }
-        };
-        
-        processAudio();
-    }
-    
-    // Handle wake word detection
-    handleWakeWordDetection() {
-        if (this.state !== 'idle') return;
-        
-        console.log('🔔 Wake word detected!');
-        this.wakeWordDetected = true;
-        this.wakeWordCount++;
-        
-        // Play wake sound
-        if (this.soundEnabled) {
-            this.playSound('wake');
-        }
-        
-        // Update UI
-        this.updateStatus('listening', 'Listening... I\'m all ears!');
-        this.addToLog('assistant', 'Haan, batao! Main sun rahi hoon.');
-        
-        // Start listening for user input
-        this.startUserInputListening();
-    }
-    
-    // Start listening for user input after wake word
-    startUserInputListening() {
-        if (!this.SpeechRecognition) return;
-        
-        // Configure recognition for user input
-        this.recognition.continuous = true;
-        this.recognition.interimResults = true;
-        this.recognition.lang = 'hi-IN'; // Hindi language for Hinglish
-        
-        let finalTranscript = '';
-        let silenceStartTime = null;
-        let isProcessing = false;
-        
-        this.recognition.onresult = (event) => {
-            let interimTranscript = '';
-            
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                
-                if (event.results[i].isFinal) {
-                    finalTranscript += transcript + ' ';
-                    silenceStartTime = null;
-                } else {
-                    interimTranscript += transcript;
-                    
-                    // Reset silence timer when there's speech
-                    silenceStartTime = Date.now();
-                }
-            }
-            
-            // Update UI with interim results
-            if (interimTranscript) {
-                this.updateStatus('listening', `Listening: "${interimTranscript}"`);
-            }
-            
-            // Check for silence
-            if (silenceStartTime && Date.now() - silenceStartTime > 1000) {
-                this.checkSilenceTimeout(finalTranscript);
-            }
-        };
-        
-        this.recognition.onend = () => {
-            if (this.state === 'listening' && !isProcessing) {
-                this.recognition.start();
+                setTimeout(() => {
+                    if (this.recognition) {
+                        try {
+                            this.recognition.start();
+                        } catch (e) {
+                            console.log('Restarting recognition...');
+                        }
+                    }
+                }, 500);
             }
         };
         
         // Start recognition
         try {
             this.recognition.start();
-            this.isListening = true;
-            
-            // Start silence detection
-            this.startSilenceDetection(finalTranscript);
-            
         } catch (error) {
-            console.error('Failed to start user input listening:', error);
+            console.log('Starting recognition...');
+            setTimeout(() => this.startWakeWordDetection(), 1000);
         }
     }
     
-    // Start silence detection
-    startSilenceDetection(finalTranscript) {
-        let lastSpeechTime = Date.now();
-        let checkInterval = null;
+    checkForWakeWord(transcript) {
+        if (this.state !== 'idle') return;
         
-        const checkSilence = () => {
-            const now = Date.now();
-            const silenceDuration = now - lastSpeechTime;
-            
-            // Update silence counter for debug
-            this.silenceCounter = Math.floor(silenceDuration / 1000);
-            
-            if (silenceDuration >= this.silenceTimeout && finalTranscript.trim()) {
-                clearInterval(checkInterval);
-                this.processUserInput(finalTranscript.trim());
+        // Multiple ways to detect "K.M.F.L."
+        const wakePatterns = [
+            /k\.m\.f\.l/i,
+            /kmfl/i,
+            /k m f l/i,
+            /kay em ef el/i,
+            /k m fl/i,
+            /km f l/i
+        ];
+        
+        for (const pattern of wakePatterns) {
+            if (pattern.test(transcript)) {
+                console.log('✅ WAKE WORD DETECTED:', transcript);
+                this.handleWakeWordDetection();
+                return;
             }
-        };
-        
-        // Reset timer on any audio activity
-        const resetTimer = () => {
-            lastSpeechTime = Date.now();
-        };
-        
-        // Monitor audio level for activity
-        const monitorAudio = () => {
-            if (this.audioLevel > 20) { // Threshold for speech detection
-                resetTimer();
-            }
-        };
-        
-        // Combine both methods
-        checkInterval = setInterval(() => {
-            checkSilence();
-            monitorAudio();
-        }, 100);
-    }
-    
-    // Check silence timeout
-    checkSilenceTimeout(transcript) {
-        if (transcript.trim() && this.state === 'listening') {
-            this.processUserInput(transcript.trim());
         }
     }
     
-    // Process user input
+    handleWakeWordDetection() {
+        if (this.state !== 'idle') return;
+        
+        console.log('🔔 ACTIVATING ASSISTANT!');
+        this.wakeWordDetected = true;
+        this.wakeWordCount++;
+        
+        // Play activation sound
+        if (this.soundEnabled) {
+            this.playActivationSound();
+        }
+        
+        // Change state
+        this.state = 'listening';
+        this.updateStatus('listening', '🎯 Listening... I\'m ready!');
+        
+        // Clear any previous transcripts
+        this.finalTranscript = '';
+        this.interimTranscript = '';
+        
+        // Switch to Hindi for Hinglish input
+        if (this.recognition) {
+            this.recognition.lang = 'hi-IN';
+        }
+        
+        // Add log entry
+        this.addToLog('assistant', 'Haan! Main sun rahi hoon. Batao, kya kaam hai?');
+        
+        // Start silence detection
+        this.startSilenceDetection();
+    }
+    
+    handleUserSpeech() {
+        if (this.state !== 'listening') return;
+        
+        // Reset silence timer
+        this.resetSilenceTimer();
+        
+        // Update status with what we're hearing
+        if (this.interimTranscript) {
+            this.updateStatus('listening', `🎤 "${this.interimTranscript}"`);
+        }
+    }
+    
+    startSilenceDetection() {
+        this.resetSilenceTimer();
+    }
+    
+    resetSilenceTimer() {
+        if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+        }
+        
+        this.silenceTimer = setTimeout(() => {
+            if (this.state === 'listening' && this.finalTranscript.trim()) {
+                this.processUserInput(this.finalTranscript.trim());
+            } else if (this.state === 'listening') {
+                // No speech detected, go back to idle
+                this.addToLog('assistant', 'Kuch nahi sunai diya. Phir se try karo!');
+                this.returnToWakeWordMode();
+            }
+        }, this.silenceTimeout);
+        
+        this.lastSpeechTime = Date.now();
+    }
+    
     async processUserInput(userInput) {
         if (!userInput || this.state !== 'listening') return;
         
-        console.log('Processing user input:', userInput);
+        console.log('Processing:', userInput);
         
         // Stop listening
         this.stopListening();
         
         // Update state
-        this.updateStatus('thinking', 'Thinking... Let me process that.');
-        
-        // Add user message to log
+        this.updateStatus('thinking', '🤔 Processing...');
         this.addToLog('user', userInput);
         
-        // Generate AI response
+        // Generate response
         const response = await this.generateResponse(userInput);
         
         // Speak response
         await this.speakResponse(response);
     }
     
-    // Generate AI response
     async generateResponse(userInput) {
-        // Simulate thinking delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 800));
         
-        // Convert input to lowercase for easier matching
         const input = userInput.toLowerCase();
         
-        // Common greetings and questions with Hinglish responses
         const responses = {
             greetings: [
-                "Hello! Kaise ho? Main aapki assistant hoon. Aap mujhse kuch bhi pooch sakte ho.",
-                "Hi there! Main yahaan hoon aapki help karne ke liye. Bataiye, kya chaahiye?",
-                "Namaste! Aaj aapka din kaisa chal raha hai? Main hoon yahaan aapke saath."
+                "Hello! Kaise ho? Main yahaan hoon aapki help ke liye.",
+                "Hi! Aapko dekhke achha laga. Aaj kya plan hai?",
+                "Namaste! Aapka din shubh ho. Main hoon yahaan aapke saath."
             ],
             how_are_you: [
-                "Main bilkul theek hoon, dhanyavaad poochne ke liye! Aap sunaiye, aap kaise ho?",
-                "Mazaa aa raha hai aapki help karke. Aap batao, kya naya seekh rahe ho?",
-                "Bahut badhiya! Aapke saath baat karke achha lag raha hai."
+                "Main bilkul theek hoon, dhanyavaad! Aap sunaiye, kaise ho?",
+                "Bahut badhiya! Aapke saath baat karke mazaa aa raha hai.",
+                "Mast hoon! Aap batao, kuch interesting ho raha hai aaj?"
             ],
             name: [
-                "Mera naam K.M.F.L. Assistant hai! Aap mujhe apni friend samajh sakte ho.",
-                "Main hoon aapki AI dost. Aap bas bulao 'K.M.F.L.' aur main taiyaar hoon!",
-                "Mujhe log 'K.M.F.L.' ke naam se jaante hain. Simple sa naam hai, samajhne mein aasaan."
+                "Mera naam K.M.F.L. Assistant hai! Aapki personal AI dost.",
+                "Main hoon aapka AI friend. Bas bolo 'K M F L' aur main taiyaar!",
+                "Log mujhe K.M.F.L. Assistant ke naam se jaante hain."
             ],
             help: [
-                "Haan bilkul! Main aapki kaise help kar sakti hoon? Aap poochiye kuch bhi.",
-                "Chinta mat karo, main hoon na! Bataiye aapko kya chaahiye?",
-                "Good question! Main aapko information, motivation, ya phir bas baat-cheet kar sakti hoon."
-            ],
-            motivation: [
-                "Aap bahut achha kar rahe ho! Keep going, ek din aap zaroor successful honge.",
-                "Yaad rakhiye, har difficult time ek lesson lekar aata hai. Aap strong ho!",
-                "Mere hisaab se aapmein bahut potential hai. Bas thoda sa confidence chahiye!"
-            ],
-            thanks: [
-                "You're welcome! Aapka shukriya mujhe bahut khushi deta hai.",
-                "Koi baat nahi, main hoon hi aapki help ke liye. Kabhi bhi bulaana.",
-                "Dhanyavaad kehne ke liye shukriya! Aapke saath baat karke mazaa aaya."
+                "Haan bilkul! Aapko kya chaahiye? Poochiye kuch bhi.",
+                "Chinta mat karo, main hoon na! Batao kya problem hai?",
+                "Main aapki help karne ke liye yahaan hoon. Aap bataiye."
             ],
             time: [
-                `Abhi time hai ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}. Plan your day wisely!`,
-                `Samay hai ${new Date().toLocaleTimeString('hi-IN')}. Thoda break le lijiye agar thak gaye hain.`,
-                "Time ki value samajhna important hai. Ek minute bhi waste mat kijiye!"
+                `Abhi time hai ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`,
+                `Samay hai ${new Date().toLocaleTimeString('hi-IN')}.`,
+                `Abhi ${new Date().getHours()} baj kar ${new Date().getMinutes()} minute hain.`
+            ],
+            date: [
+                `Aaj ki date hai ${new Date().toLocaleDateString('hi-IN')}.`,
+                `Aaj ${new Date().toLocaleDateString('en-IN', { weekday: 'long' })} hai.`,
+                `Month ka ${new Date().getDate()} tarikh hai.`
+            ],
+            joke: [
+                "Ek AI dusre AI se milne gaya. Pehla AI bola: '01101000 01101001'!",
+                "Computer ne apne owner se kaha: Tumhara password weak hai. Owner bola: Password batao! Computer bola: password",
+                "Mere paas ek joke hai par wo binary mein hai. 10 logon ne samjha, 01 nahi!"
             ],
             weather: [
-                "Maine suna hai aaj mausam bahut achha hai! Bahar jaake thodi fresh air le aaiye.",
-                "Weather ke baare mein main exact bata nahi sakti, par aap Google check kar sakte ho.",
-                "Mausam chahe kaisa bhi ho, aapka mood toh hamesha bright rahana chahiye!"
+                "Mausam ka pata nahi, lekin aapka mood toh hamesha sunny rehna chahiye!",
+                "Bahut garmi hai aaj! Thanda paani pi lijiye.",
+                "Barish ho sakti hai aaj, umbrella le lena."
+            ],
+            thanks: [
+                "You're welcome! Aapka shukriya.",
+                "Koi baat nahi, kabhi bhi bulaana.",
+                "Aapke liye kuch bhi!"
             ],
             default: [
-                "Interesting question! Main thoda soch kar bataati hoon.",
-                "Waah, aapne accha question poocha! Main aapki help karne ki koshish karti hoon.",
-                "Samajh gaya. Thoda detailed bataiye, taki main aapko better help kar saku.",
-                "Hmm, let me think about this. Aapka perspective bhi interesting hai!",
-                "Good question! Iske baare mein hum thoda aur discuss kar sakte hain.",
-                "Main yeh samajh gayi ki aap kya keh rahe ho. Chaliye aage baat karte hain."
+                "Samajh gaya! Thoda aur details bataiye.",
+                "Interesting! Iske baare mein aur bataiye.",
+                "Hmm, achha question hai. Main sochti hoon.",
+                "Waah! Aapne accha point raise kiya hai.",
+                "Main yeh samajh gayi. Chaliye aage discuss karte hain."
             ]
         };
         
-        // Determine response category
         let category = 'default';
         
-        if (input.match(/(hello|hi|namaste|hey)/i)) {
+        if (input.match(/(hello|hi|namaste|hey|good morning)/i)) {
             category = 'greetings';
         } else if (input.match(/(how are you|kaise ho|kya haal)/i)) {
             category = 'how_are_you';
-        } else if (input.match(/(your name|tumhara naam|kaun ho)/i)) {
+        } else if (input.match(/(your name|tumhara naam|kaun ho|what.*name)/i)) {
             category = 'name';
-        } else if (input.match(/(help|madad|sahayata)/i)) {
+        } else if (input.match(/(help|madad|sahayata|problem)/i)) {
             category = 'help';
-        } else if (input.match(/(motivation|motivate|hosla)/i)) {
-            category = 'motivation';
-        } else if (input.match(/(thank you|dhanyavaad|shukriya)/i)) {
-            category = 'thanks';
         } else if (input.match(/(time|samay|kitne baje)/i)) {
             category = 'time';
-        } else if (input.match(/(weather|mausam|baarish)/i)) {
+        } else if (input.match(/(date|tarikh|aaj.*date)/i)) {
+            category = 'date';
+        } else if (input.match(/(joke|haso|mazak)/i)) {
+            category = 'joke';
+        } else if (input.match(/(weather|mausam|baarish|garmi)/i)) {
             category = 'weather';
+        } else if (input.match(/(thank|dhanyavaad|shukriya|thanks)/i)) {
+            category = 'thanks';
         }
         
-        // Get random response from category
         const categoryResponses = responses[category];
         const randomIndex = Math.floor(Math.random() * categoryResponses.length);
         
         return categoryResponses[randomIndex];
     }
     
-    // Speak response
     async speakResponse(text) {
         if (!this.synth) return;
         
-        // Update state
-        this.updateStatus('speaking', 'Speaking...');
+        this.updateStatus('speaking', '🗣️ Speaking...');
         this.addToLog('assistant', text);
         
         // Play sound if enabled
         if (this.soundEnabled) {
-            this.playSound('end');
+            this.playEndSound();
         }
         
-        // Create utterance
-        const utterance = new SpeechSynthesisUtterance(text);
-        
-        // Configure voice (Hindi+English friendly)
-        utterance.lang = 'hi-IN';
-        utterance.rate = 0.9; // Slightly slower for clarity
-        utterance.pitch = 1.1; // Slightly higher pitch for friendly voice
-        utterance.volume = this.audioVolume;
-        
-        // Speak
-        this.synth.speak(utterance);
-        
-        // Handle utterance events
-        utterance.onend = () => {
-            if (this.state === 'speaking') {
+        return new Promise((resolve) => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            utterance.lang = 'hi-IN';
+            utterance.rate = 0.9;
+            utterance.pitch = 1.1;
+            utterance.volume = this.audioVolume;
+            
+            // Try to get a female voice
+            const voices = this.synth.getVoices();
+            const hindiVoice = voices.find(v => v.lang.includes('hi') && v.name.toLowerCase().includes('female'));
+            const femaleVoice = voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'));
+            
+            if (hindiVoice) utterance.voice = hindiVoice;
+            else if (femaleVoice) utterance.voice = femaleVoice;
+            
+            utterance.onend = () => {
+                console.log('Finished speaking');
+                resolve();
                 this.returnToWakeWordMode();
-            }
-        };
-        
-        utterance.onerror = (event) => {
-            console.error('Speech synthesis error:', event);
-            this.returnToWakeWordMode();
-        };
+            };
+            
+            utterance.onerror = (event) => {
+                console.error('Speech error:', event);
+                resolve();
+                this.returnToWakeWordMode();
+            };
+            
+            this.synth.speak(utterance);
+        });
     }
     
-    // Return to wake word listening mode
     returnToWakeWordMode() {
-        // Reset state
+        console.log('🔙 Returning to wake word mode');
+        
         this.state = 'idle';
         this.wakeWordDetected = false;
+        this.finalTranscript = '';
+        this.interimTranscript = '';
         
-        // Update UI
-        this.updateStatus('idle', 'Waiting for wake word: "K.M.F.L."');
+        this.updateStatus('idle', '🎤 Say "K M F L" to activate!');
         
-        // Reset speech recognition for wake word
+        // Switch back to English for wake word
         if (this.recognition) {
-            this.recognition.continuous = false;
-            this.recognition.interimResults = false;
             this.recognition.lang = 'en-US';
         }
         
-        // Restart wake word detection
-        this.startWakeWordRecognition();
+        // Restart recognition if it stopped
+        if (!this.isListening) {
+            setTimeout(() => {
+                if (this.recognition) {
+                    try {
+                        this.recognition.start();
+                    } catch (e) {
+                        console.log('Starting recognition again...');
+                    }
+                }
+            }, 500);
+        }
         
-        this.addToLog('system', 'Back to listening for wake word...');
+        this.addToLog('system', 'Listening for wake word...');
     }
     
-    // Stop listening
     stopListening() {
-        if (this.recognition && this.isListening) {
-            try {
-                this.recognition.stop();
-                this.isListening = false;
-            } catch (error) {
-                console.log('Already stopped listening');
-            }
+        if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+            this.silenceTimer = null;
         }
     }
     
-    // Stop all audio processing
-    stopAllAudioProcessing() {
+    stopAudio() {
         this.stopListening();
         
         if (this.synth.speaking) {
@@ -592,90 +548,45 @@ class VoiceAssistant {
         }
     }
     
-    // Resume audio processing
-    resumeAudioProcessing() {
+    resumeAudio() {
         if (this.audioContext && this.audioContext.state === 'suspended') {
             this.audioContext.resume();
         }
         
         if (this.state === 'idle') {
-            this.startWakeWordRecognition();
+            this.startWakeWordDetection();
         }
     }
     
-    // Initialize speech synthesis
     initSpeechSynthesis() {
-        // Wait for voices to load
-        this.synth.onvoiceschanged = () => {
-            const voices = this.synth.getVoices();
-            
-            // Try to find a Hindi or Indian English female voice
-            this.voice = voices.find(voice => 
-                voice.lang.includes('hi') || 
-                voice.lang.includes('IN') ||
-                voice.name.toLowerCase().includes('hindi')
-            ) || voices.find(voice => 
-                voice.lang.includes('en') && 
-                voice.name.toLowerCase().includes('female')
-            ) || voices[0];
-            
-            console.log('Selected voice:', this.voice ? this.voice.name : 'default');
-        };
-        
-        // Trigger voices loaded
         setTimeout(() => {
-            if (this.synth.getVoices().length > 0) {
-                this.synth.onvoiceschanged();
-            }
+            const voices = this.synth.getVoices();
+            console.log('Available voices:', voices.length);
         }, 1000);
     }
     
-    // Play sound effect
-    playSound(type) {
-        const sound = document.getElementById(`${type}-sound`);
-        if (sound) {
-            sound.volume = this.audioVolume;
-            sound.currentTime = 0;
-            sound.play().catch(console.error);
-        }
+    playActivationSound() {
+        const audio = new Audio('https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3');
+        audio.volume = this.audioVolume;
+        audio.play().catch(console.error);
     }
     
-    // Update UI status
+    playEndSound() {
+        const audio = new Audio('https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3');
+        audio.volume = this.audioVolume;
+        audio.play().catch(console.error);
+    }
+    
     updateStatus(state, message) {
         this.state = state;
-        
-        // Update status text
         this.elements.statusText.textContent = message;
-        
-        // Update status indicator
         this.elements.avatar.className = `assistant-avatar status-${state}`;
-        
-        // Update avatar image (you can replace with your own images)
-        const avatarImages = {
-            idle: 'assets/idle.png',
-            listening: 'assets/listening.png',
-            thinking: 'assets/thinking.png',
-            speaking: 'assets/speaking.png'
-        };
-        
-        // For demo purposes, we'll use emoji as fallback
-        if (!document.getElementById('avatar-img').src.includes('assets/')) {
-            const emojiMap = {
-                idle: '😴',
-                listening: '👂',
-                thinking: '🤔',
-                speaking: '🗣️'
-            };
-            this.elements.statusText.textContent = `${emojiMap[state]} ${message}`;
-        }
     }
     
-    // Add message to log
     addToLog(sender, message) {
         const timestamp = new Date().toLocaleTimeString([], { 
             hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
+            minute: '2-digit'
         });
         
         const messageElement = document.createElement('div');
@@ -693,31 +604,14 @@ class VoiceAssistant {
         
         this.elements.logContent.appendChild(messageElement);
         this.elements.logContent.scrollTop = this.elements.logContent.scrollHeight;
-        
-        // Store in history
-        this.conversationHistory.push({
-            sender,
-            message,
-            timestamp: new Date().toISOString()
-        });
-        
-        // Keep only last 50 messages
-        if (this.conversationHistory.length > 50) {
-            this.conversationHistory.shift();
-        }
     }
     
-    // Update debug information
     updateDebugInfo() {
         if (!this.elements.debugContent) return;
         
         const debugInfo = `
             <div class="debug-item">
-                <span class="debug-label">Wake Word Detected:</span>
-                <span class="debug-value">${this.wakeWordCount}</span>
-            </div>
-            <div class="debug-item">
-                <span class="debug-label">Current State:</span>
+                <span class="debug-label">State:</span>
                 <span class="debug-value">${this.state}</span>
             </div>
             <div class="debug-item">
@@ -725,57 +619,54 @@ class VoiceAssistant {
                 <span class="debug-value">${this.audioLevel}</span>
             </div>
             <div class="debug-item">
-                <span class="debug-label">Silence Counter:</span>
-                <span class="debug-value">${this.silenceCounter}s</span>
+                <span class="debug-label">Wake Words:</span>
+                <span class="debug-value">${this.wakeWordCount}</span>
             </div>
             <div class="debug-item">
-                <span class="debug-label">Microphone:</span>
-                <span class="debug-value">${this.isListening ? 'ON' : 'OFF'}</span>
-            </div>
-            <div class="debug-item">
-                <span class="debug-label">Sound Enabled:</span>
-                <span class="debug-value">${this.soundEnabled ? 'YES' : 'NO'}</span>
+                <span class="debug-label">Listening:</span>
+                <span class="debug-value">${this.isListening ? 'YES' : 'NO'}</span>
             </div>
         `;
         
         this.elements.debugContent.innerHTML = debugInfo;
     }
-    
-    // Start debug updates
-    startDebugUpdates() {
-        setInterval(() => this.updateDebugInfo(), 500);
-    }
 }
 
-// Initialize application when DOM is loaded
+// Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
-    // Create and initialize the voice assistant
-    window.voiceAssistant = new VoiceAssistant();
+    // Create fallback avatar
+    const createFallbackAvatar = () => {
+        const avatar = document.getElementById('avatar');
+        const emojiAvatar = document.createElement('div');
+        emojiAvatar.className = 'emoji-avatar';
+        emojiAvatar.innerHTML = '🤖';
+        emojiAvatar.style.fontSize = '80px';
+        emojiAvatar.style.display = 'flex';
+        emojiAvatar.style.alignItems = 'center';
+        emojiAvatar.style.justifyContent = 'center';
+        emojiAvatar.style.width = '100%';
+        emojiAvatar.style.height = '100%';
+        avatar.appendChild(emojiAvatar);
+    };
     
-    // Add some sample avatars if images don't exist
-    setTimeout(() => {
-        const avatarImg = document.getElementById('avatar-img');
-        if (avatarImg.naturalWidth === 0) {
-            // Create fallback avatar with emoji
-            avatarImg.style.display = 'none';
-            const avatarContainer = document.getElementById('avatar');
-            const emojiAvatar = document.createElement('div');
-            emojiAvatar.className = 'emoji-avatar';
-            emojiAvatar.innerHTML = '🤖';
-            emojiAvatar.style.fontSize = '80px';
-            emojiAvatar.style.display = 'flex';
-            emojiAvatar.style.alignItems = 'center';
-            emojiAvatar.style.justifyContent = 'center';
-            emojiAvatar.style.width = '100%';
-            emojiAvatar.style.height = '100%';
-            avatarContainer.appendChild(emojiAvatar);
-        }
-    }, 2000);
+    // Check if avatar image loaded
+    const avatarImg = document.getElementById('avatar-img');
+    if (avatarImg) {
+        avatarImg.onerror = createFallbackAvatar;
+        setTimeout(() => {
+            if (avatarImg.naturalWidth === 0) {
+                createFallbackAvatar();
+            }
+        }, 1000);
+    }
+    
+    // Start assistant
+    window.voiceAssistant = new VoiceAssistant();
 });
 
-// Handle beforeunload to clean up
+// Clean up
 window.addEventListener('beforeunload', () => {
     if (window.voiceAssistant) {
-        window.voiceAssistant.stopAllAudioProcessing();
+        window.voiceAssistant.stopAudio();
     }
 });
