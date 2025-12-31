@@ -1,133 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K.M.F.L. - AI Voice Assistant</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
-</head>
-<body>
-    <!-- Background Animation -->
-    <div class="background-animation">
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
+<!-- Microphone Permission -->
+<div class="modal active" id="permission-modal">
+    <div class="modal-content">
+        <h2>🎤 Microphone Access Required</h2>
+        <p>This assistant needs microphone access to listen for "K.M.F.L."</p>
+        <p>Click below to enable microphone:</p>
+        <button id="request-permission" class="btn-primary">
+            <i class="fas fa-microphone"></i> Enable Microphone
+        </button>
+        <p class="hint" style="margin-top: 20px; color: #60a5fa;">
+            <i class="fas fa-info-circle"></i> 
+            After allowing permission, just say <strong>"K M F L"</strong> to activate
+        </p>
     </div>
-
-    <!-- Main Container -->
-    <div class="container">
-        <!-- Assistant Avatar -->
-        <div class="assistant-avatar" id="avatar">
-            <img src="assets/idle.png" alt="AI Assistant" id="avatar-img">
-            <div class="status-indicator" id="status-indicator"></div>
-        </div>
-
-        <!-- Status Display -->
-        <div class="status-container">
-            <div class="status-text" id="status-text">Waiting for wake word: "K.M.F.L."</div>
-            <div class="wake-word-display">
-                <span class="wake-word">K.M.F.L.</span>
-                <span class="wake-word-hint">(Say "K.M.F.L." to activate)</span>
-            </div>
-        </div>
-
-        <!-- Conversation Log -->
-        <div class="conversation-log" id="conversation-log">
-            <div class="log-header">Conversation Log</div>
-            <div class="log-content" id="log-content">
-                <!-- Messages will appear here -->
-            </div>
-        </div>
-
-        <!-- Controls Panel -->
-        <div class="controls-panel">
-            <div class="control-group">
-                <label for="silence-timeout">Silence Timeout (seconds)</label>
-                <input type="range" id="silence-timeout" min="2" max="5" step="0.5" value="3">
-                <span id="timeout-value">3s</span>
-            </div>
-            <div class="control-group">
-                <label for="volume">Voice Volume</label>
-                <input type="range" id="volume" min="0" max="100" value="80">
-                <span id="volume-value">80%</span>
-            </div>
-            <div class="control-group">
-                <button id="clear-log" class="btn">
-                    <i class="fas fa-trash"></i> Clear Log
-                </button>
-                <button id="toggle-sound" class="btn">
-                    <i class="fas fa-volume-up"></i> Sound: ON
-                </button>
-            </div>
-        </div>
-
-        <!-- Microphone Access Modal -->
-        <div class="modal" id="permission-modal">
-            <div class="modal-content">
-                <h2><i class="fas fa-microphone"></i> Microphone Permission Required</h2>
-                <p>This AI assistant needs microphone access to listen for the wake word "K.M.F.L." and your voice commands.</p>
-                <p>Please allow microphone access when prompted.</p>
-                <button id="request-permission" class="btn-primary">
-                    <i class="fas fa-microphone"></i> Enable Microphone
-                </button>
-                <div class="note">
-                    <i class="fas fa-info-circle"></i> Your audio is processed locally and never leaves your browser.
-                </div>
-            </div>
-        </div>
-
-        <!-- Debug Panel (Hidden in production) -->
-        <div class="debug-panel" id="debug-panel">
-            <div class="debug-header">
-                <i class="fas fa-bug"></i> Debug Info
-                <button id="toggle-debug"><i class="fas fa-chevron-up"></i></button>
-            </div>
-            <div class="debug-content" id="debug-content">
-                <div class="debug-item">
-                    <span class="debug-label">Wake Word Detected:</span>
-                    <span id="wake-word-count">0</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-label">Current State:</span>
-                    <span id="current-state">initializing</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-label">Audio Level:</span>
-                    <span id="audio-level">0</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-label">Silence Counter:</span>
-                    <span id="silence-counter">0</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p>AI Voice Assistant | Wake Word: "K.M.F.L." | 
-                <span id="connection-status">
-                    <i class="fas fa-wifi"></i> Online
-                </span>
-            </p>
-            <p class="hint">
-                <i class="fas fa-lightbulb"></i> 
-                Just say "K.M.F.L." to start talking. Speak naturally in Hindi or English.
-            </p>
-        </footer>
-    </div>
-
-    <!-- Audio Elements -->
-    <audio id="wake-sound" preload="auto">
-        <source src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3" type="audio/mpeg">
-    </audio>
-    <audio id="end-sound" preload="auto">
-        <source src="https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3" type="audio/mpeg">
-    </audio>
-
-    <script src="script.js"></script>
-</body>
-</html>
+</div>
